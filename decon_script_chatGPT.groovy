@@ -1,46 +1,53 @@
-// This script takes an input image and generates a synthetic point spread function (PSF) based on the specified parameters.
-// It then deconvolves the input image with the generated PSF using the Richardson-Lucy algorithm to produce a result image.
+#@ ImgPlus img             # input image
+#@ OpService ops           # image processing operations
+#@ UIService ui            # user interface
+#@ Integer iterations(label="Iterations", value=30)           # number of iterations for Richardson-Lucy deconvolution
+#@ Float numericalAperture(label="Numerical Aperture", value=1.4)  # numerical aperture of the microscope objective
+#@ Integer wavelength(label="Wavelength (nm)", value=550)           # wavelength of light used in imaging in nanometers
+#@ Float riImmersion(label="Refractive Index (immersion)", value=1.5)   # refractive index of the immersion medium
+#@ Float riSample(label="Refractive Index (sample)", value=1.4)    # refractive index of the sample
+#@ Float xySpacing(label="XY Spacing (nm)", value=62.9)            # pixel size of the XY dimensions in nanometers
+#@ Float zSpacing(label="Z Spacing (nm)", value=160)               # pixel size of the Z dimension in nanometers
+#@ Float pZ(label="Particle/sample Position (um)", value=0)         # particle/sample position in micrometers
+#@ Float regularizationFactor(label="Regularization factor", value=0.002)  # regularization factor for Richardson-Lucy deconvolution
+#@output ImgPlus psf       # point spread function (PSF) image
+#@output ImgPlus result    # deconvolved image
 
-// The following annotations define the input and output parameters for the script, and allow the user to specify values for them when running the script.
-// The `ImgPlus` data type represents an image with metadata, and `OpService` and `UIService` are services provided by the ImageJ API.
-// `Integer`, `Float`, and `FloatType` are standard Java data types.
-//@ ImgPlus img
-//@ OpService ops
-//@ UIService ui
-//@ Integer iterations(label="Iterations", value=30)
-//@ Float numericalAperture(label="Numerical Aperture", value=1.4)
-//@ Float wavelength(label="Wavelength (nm)", value=550)
-//@ Float riImmersion(label="Refractive Index (immersion)", value=1.5)
-//@ Float riSample(label="Refractive Index (sample)", value=1.4)
-//@ Float xySpacing(label="XY Spacing (nm)", value=62.9)
-//@ Float zSpacing(label="Z Spacing (nm)", value=160)
-//@ Integer depth(value=0)
-//@output ImgPlus psf
-//@output ImgPlus result
-
-// The following line imports the ImageJ IJ class, which provides various utility methods for working with images.
 import ij.IJ
-
-// The following lines import classes from the ImageJ API that will be used in the script.
 import net.imglib2.FinalDimensions
 import net.imglib2.type.numeric.real.FloatType
 
-// Convert the input image to a 32-bit floating-point representation, which is required for subsequent processing steps.
+# convert integer wavelength parameter to float
+wavelength = wavelength.toFloat()
+
+# convert input image to 32-bit
 img_f = ops.convert().float32(img)
 
-// Generate a synthetic PSF based on the input image shape and the specified parameters.
-// The PSF is created using the `kernelDiffraction` function, which generates a diffraction-limited PSF based on the input parameters.
-// The lateral and axial resolutions are calculated based on the XY and Z spacings and the wavelength of light used in imaging.
+# generate synthetic PSF based on input shape
 psf_dims = []
 for (dim in img.dimensionsAsLongArray()) {
     psf_dims.add(dim)
 }
 psf_size = new FinalDimensions(psf_dims as long[])
-wv = wavelength * 1E-9
-lateral_res = xySpacing * 1E-9
-axial_res = zSpacing * 1E-9
-psf = ops.create().kernelDiffraction(psf_size, numericalAperture, wv, riSample, riImmersion, lateral_res, axial_res, depth, new FloatType())
+wv = wavelength * 1E-9   # convert wavelength to meters
+lateral_res = xySpacing * 1E-9   # convert pixel size to meters
+axial_res = zSpacing * 1E-9   # convert pixel size to meters
+psf = ops.create().kernelDiffraction(
+    psf_size,
+    numericalAperture,
+    wv,
+    riSample,
+    riImmersion,
+    lateral_res,
+    axial_res,
+    pZ,
+    new FloatType()
+)
 
-// Deconvolve the input image with the generated PSF using the Richardson-Lucy algorithm.
-// This algorithm iteratively estimates the original image based on the PSF and the observed image.
-result = ops.deconvolve().richardsonLucy(img_f, psf, iterations)
+# deconvolve image using Richardson-Lucy with total variation (TV) regularization
+result = ops.deconvolve().richardsonLucyTV(
+    img_f,
+    psf,
+    iterations,
+    regularizationFactor
+)
